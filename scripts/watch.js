@@ -1,170 +1,53 @@
-/**
- * Watch script initially inspired by che-tsumi:
- *
- * https://github.com/vuejs-jp/che-tsumi
- */
+// const interval = 10 * 60 * 1000; // Run every ten minutes
+const interval = 10 * 1000;
+
 const fs = require('fs');
-const RssFeedEmitter = require('rss-feed-emitter');
-const Queue = require('queue');
-const Github = require('../lib/github');
-const Repo = require('../lib/repository');
-const Utility = require('../lib/utility');
+const shell = require('shelljs');
+
+const [srcConfigFile, langsDir] = process.argv.slice(2);
+const langFiles = fs.readdirSync(langsDir);
+const {owner, repository} = getJSON(srcConfigFile);
 
 function getJSON(file) {
   // Get content from file
   return JSON.parse(fs.readFileSync(file));
 }
 
-let headFeeder = new RssFeedEmitter();
-let github = null;
-let q = Queue({autostart: true, concurrency: 1});
-
-const [configFile, langFile] = process.argv.slice(2);
-if (!configFile) {
-  throw new Error('Config file not provided');
+if (!srcConfigFile) {
+  throw new Error('Source config file not provided');
 }
-const {owner, repository} = getJSON(configFile);
-const {code: langCode} = getJSON(langFile);
+if (!langsDir) {
+  throw new Error('Language config directory not provided');
+}
 
-const repoName = `${langCode}.${repository}`;
-const url = `https://github.com/${owner}/${repoName}.git`;
-const defaultBranch = 'master';
+if (shell.cd('repo').code !== 0) {
+  console.log('[watch] repo directory does not exist; creating...');
+  shell.mkdir('repo');
+  shell.cd('repo');
+}
 
-let remote = {
-  origin: {
-    url,
-    owner,
-    name: repoName,
-    defaultBranch,
-  },
-  head: {
-    url: `https://github.com/${owner}/${repository}.git`,
-    name: repository,
-    defaultBranch,
-  },
-};
+// const {code: langCode, name: langName, maintainers} = getJSON(langConfigFile);
+const originalUrl = `https://github.com/${owner}/${repository}.git`;
+if (shell.cd(repository).code !== 0) {
+  console.log(`[watch] Can't find source repo locally. Cloning it...`);
+  shell.exec(`git clone ${originalUrl} ${repository}`);
+  console.log(`[watch] Finished cloning.`);
+  shell.cd(repository);
+}
 
-let repo = new Repo({
-  path: 'repo',
-  remote,
-  user: {
-    name: process.env.USER_NAME,
-    email: process.env.EMAIL,
-  },
-});
-
-const setup = async () => {
-  github = new Github(process.env.GITHUB_ACCESS_TOKEN);
-  Utility.log('I', `${repoName} Setting up repo...`);
-  repo.setup();
-  Utility.log('I', `${repoName} Finished setting up`);
-  setupHeadFeeder();
-};
-
-const setupHeadFeeder = () => {
-  headFeeder.add({
-    url: `https://github.com/${owner}/${repository}/commits/${defaultBranch}.atom`,
-    refresh: 10000,
-  });
-
-  headFeeder.on('new-item', handleNewItem);
-};
-
-const handleNewItem = async item => {
-  Utility.log('I', `${repoName} New commit on head repo: ${item.title}`);
-
-  const hash = Utility.extractBasename(item.link);
-  // branch names consisting of 40 hex characters are not allowed
-  const shortHash = hash.substr(0, 8);
-
-  // if (repo.existsCommit(shortHash)) {
-  //   Utility.log(
-  //     'W',
-  //     `${repoName} ${item.title}: Commit has already been merged`,
-  //   );
-  //   return;
-  // }
-
-  if (repo.existsRemoteBranch(shortHash)) {
-    Utility.log('W', `${repoName} ${item.title}: Remote branch already exists`);
+setInterval(() => {
+  // pull from the original repo and see if there are any changes
+  console.log('[watch]: checking for updates...');
+  const output = shell.exec('git pull origin master').stdout;
+  if (output.includes('Already up to date')) {
+    console.log('[watch]: no changes detected');
     return;
   }
 
-  const {data: result} = await github.searchIssue(remote, {hash});
-  let issueNo = null;
-  if (result.total_count === 0) {
-    let body = `Update to original repo\nOriginal:${item.link}`;
-    const newIssue = await github.createIssue(remote, {
-      title: `[Merge]: ${Utility.removeHash(item.title)}`,
-      body,
-    });
-    issueNo = newIssue.number;
-    Utility.log(
-      'S',
-      `${repoName} ${item.title}: Issue created: ${newIssue.html_url}`,
-    );
-  } else {
-    issueNo = result.items[0].number;
-  }
-
-  q.push(() => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        q.stop();
-
-        repo.fetchAllRemotes();
-        repo.updateDefaultBranch();
-        repo.deleteOldBranch(shortHash);
-        repo.createNewBranch(shortHash);
-
-        if (repo.hasConflicts('cherry-pick', hash)) {
-          Utility.log(
-            'W',
-            `${repoName} ${
-              item.title
-            }: Conflicts occurred. Please make a pull request by yourself`,
-          );
-          repo.resetChanges();
-        } else {
-          Utility.log('S', `${repoName} ${item.title}: Pull request created`);
-          repo.updateRemote(shortHash);
-          await after(item, shortHash, issueNo);
-        }
-
-        resolve();
-      } catch (e) {
-        reject();
-      } finally {
-        q.start();
-      }
-    });
+  shell.cd('../../');
+  langFiles.forEach(langFile => {
+    const path = `${langsDir}/${langFile}`;
+    shell.exec(`node scripts/sync.js ${srcConfigFile} ${path}`);
   });
-};
-
-const after = async (item, shortHash, issueNo = null) => {
-  const body = issueNo
-    ? `This PR resolves #${issueNo}\r\nCherry picked from ${item.link}`
-    : `Cherry picked from ${item.link}`;
-  const {data: pullRequest} = await github.createPullRequest(remote, {
-    title: Utility.removeHash(item.title),
-    body,
-    branch: shortHash,
-  });
-  if (!pullRequest) return;
-  Utility.log(
-    'S',
-    `${repoName} Created new pull request: ${pullRequest.html_url}`,
-  );
-  // TODO we probably want this back
-  // await github.assignReviewers(remote, {
-  //   number: pullRequest.number,
-  //   reviewers: ["tesseralis"]
-  // });
-  // Utility.log("S", "Assigned reviewers");
-};
-
-process.on('unhandledRejection', err => {
-  Utility.log('E', err);
-});
-
-setTimeout(setup);
+  shell.cd(`repo/${repository}`);
+}, interval);

@@ -34,16 +34,11 @@ if (shell.cd(transRepoName).code !== 0) {
   console.log(
     `${transRepoName} Can't find translation repo locally. Cloning...`,
   );
-  console.time(transRepoName);
   shell.exec(`git clone ${transUrl} ${transRepoName}`);
   console.log(`${transRepoName} Finished cloning.`);
-  console.timeEnd(transRepoName);
-  // shell.cd(transRepoName);
-  shell.rm('-rf', transRepoName);
-  console.log(`${transRepoName} Deleted.`);
+  shell.cd(transRepoName);
+  shell.exec(`git remote add ${repository} ${originalUrl}`);
 }
-shell.exec(`git remote add ${repository} ${originalUrl}`);
-process.exit(0);
 
 // Pull from our own origin
 shell.exec(`git checkout ${defaultBranch}`);
@@ -64,6 +59,8 @@ if (shell.exec(`git checkout ${syncBranch}`).code !== 0) {
 const output = shell.exec(`git pull ${repository} ${defaultBranch}`).stdout;
 if (output.includes('Already up to date.')) {
   console.log(`${transRepoName} we are already up to date with ${repository}.`);
+  // Cleanup and delete this repo
+  shell.rm('-rf', transRepoName);
   process.exit(0);
 }
 const lines = output.split('\n');
@@ -114,3 +111,6 @@ octokit.pullRequests.create({
   head: syncBranch,
   base: defaultBranch,
 });
+
+// Cleanup and delete this repo
+shell.rm('-rf', transRepoName);
