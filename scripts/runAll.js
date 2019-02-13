@@ -12,7 +12,9 @@ const langFiles = fs.readdirSync(langsDir);
 
 // We run the script separately for each language so that the shelljs global state
 // (e.g. working directory) doesn't interfere between runs
+console.time('clone-all');
 langFiles.forEach(langFile => {
   const path = `${langsDir}/${langFile}`;
-  shell.exec(`node scripts/${cmd}.js ${configFile} ${path}`, {async: true});
+  shell.exec(`node scripts/${cmd}.js ${configFile} ${path}`);
 });
+console.timeEnd('clone-all');

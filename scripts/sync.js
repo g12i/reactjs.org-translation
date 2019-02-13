@@ -26,7 +26,10 @@ const transUrl = `https://github.com/${owner}/${transRepoName}.git`;
 const defaultBranch = 'master';
 
 // Set up
-shell.cd('repo');
+if (shell.cd('repo').code !== 0) {
+  shell.mkdir('repo');
+  shell.cd('repo');
+}
 if (shell.cd(transRepoName).code !== 0) {
   console.log(
     `${transRepoName} Can't find translation repo locally. Cloning...`,
@@ -35,8 +38,9 @@ if (shell.cd(transRepoName).code !== 0) {
   shell.exec(`git clone ${transUrl} ${transRepoName}`);
   console.log(`${transRepoName} Finished cloning.`);
   console.timeEnd(transRepoName);
-  shell.cd(transRepoName);
-  shell.exec(`git remote add ${repository} ${originalUrl}`);
+  // shell.cd(transRepoName);
+  shell.rm('-rf', transRepoName);
+  console.log(`${transRepoName} Deleted.`);
 }
 shell.exec(`git remote add ${repository} ${originalUrl}`);
 process.exit(0);
