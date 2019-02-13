@@ -1,5 +1,5 @@
 // const interval = 10 * 60 * 1000; // Run every ten minutes
-const interval = 10 * 1000;
+const interval = 60 * 1000;
 
 const fs = require('fs');
 const shell = require('shelljs');
