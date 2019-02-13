@@ -1,6 +1,5 @@
 const shell = require('shelljs');
 const fs = require('fs');
-const shell = require('shelljs');
 // const [cmd, configFile, langsDir] = process.argv.slice(2);
 const langFiles = fs.readdirSync(langsDir);
 
