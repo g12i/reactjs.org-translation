@@ -1,7 +1,7 @@
 const shell = require('shelljs');
 const fs = require('fs');
 // const [cmd, configFile, langsDir] = process.argv.slice(2);
-const langFiles = fs.readdirSync(langsDir);
+const langFiles = fs.readdirSync('langs');
 
 const express = require('express');
 
