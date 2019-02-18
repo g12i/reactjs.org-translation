@@ -1,9 +1,14 @@
 const fs = require('fs');
 const shell = require('shelljs');
 const Octokit = require('@octokit/rest');
+const program = require('commander');
 // shell.config.silent = true;
 
-const [srcConfigFile, langConfigFile] = process.argv.slice(2);
+program // options
+  .option('-c, --cleanup', 'Delete repo when done')
+  .parse(process.argv);
+
+const [srcConfigFile, langConfigFile] = program.args;
 if (!srcConfigFile) {
   throw new Error('Source config file not provided');
 }
@@ -26,7 +31,11 @@ const transUrl = `https://github.com/${owner}/${transRepoName}.git`;
 const defaultBranch = 'master';
 
 // Set up
-shell.cd('repo');
+if (shell.cd('repo').code !== 0) {
+  shell.mkdir('repo');
+  shell.cd('repo');
+}
+
 if (shell.cd(transRepoName).code !== 0) {
   console.log(
     `${transRepoName} Can't find translation repo locally. Cloning...`,
@@ -57,6 +66,12 @@ if (shell.exec(`git checkout ${syncBranch}`).code !== 0) {
 const output = shell.exec(`git pull ${repository} ${defaultBranch}`).stdout;
 if (output.includes('Already up to date.')) {
   console.log(`${transRepoName} we are already up to date with ${repository}.`);
+  // Delete repository if cleanup
+  if (program.cleanup) {
+    shell.cd('..');
+    shell.rm('-rf', transRepoName);
+  }
+
   process.exit(0);
 }
 const lines = output.split('\n');
@@ -107,3 +122,9 @@ octokit.pullRequests.create({
   head: syncBranch,
   base: defaultBranch,
 });
+
+// Delete repository if cleanup
+if (program.cleanup) {
+  shell.cd('..');
+  shell.rm('-rf', transRepoName);
+}
